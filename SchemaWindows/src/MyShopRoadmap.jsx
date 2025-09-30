@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ChevronDown, ChevronRight, CheckCircle, Circle, Clock, AlertCircle } from 'lucide-react';
 
-const App = () => {
+const MyShopRoadmap = () => {
   const [expandedPhases, setExpandedPhases] = useState({});
   const [completedTasks, setCompletedTasks] = useState({});
   const [selectedView, setSelectedView] = useState('gantt');
@@ -732,4 +732,4 @@ const App = () => {
   );
 };
 
-export default App;
+export default MyShopRoadmap;
