@@ -1,0 +1,21 @@
+{
+    "completedTasks": {},
+    "expandedPhases": {},
+    "selectedView": "gantt",
+    "lastUpdated": "2025-09-30T14:30:00.000Z",
+    "updateCount": 0,
+    "metadata": {
+        "projectName": "MyShop 2025 Roadmap",
+        "totalPhases": 4,
+        "totalWeeks": 14,
+        "createdAt": "2025-09-30T14:30:00.000Z",
+        "version": "1.0.0"
+    },
+    "statistics": {
+        "totalTasks": 0,
+        "completedTasks": 0,
+        "completionPercentage": 0,
+        "totalHours": 550,
+        "completedHours": 0
+    }
+}

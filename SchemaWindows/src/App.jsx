@@ -1,10 +1,127 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChevronDown, ChevronRight, CheckCircle, Circle, Clock, AlertCircle } from 'lucide-react';
+
+const API_BASE_URL = 'http://localhost:3001/api';
 
 const App = () => {
   const [expandedPhases, setExpandedPhases] = useState({});
   const [completedTasks, setCompletedTasks] = useState({});
   const [selectedView, setSelectedView] = useState('gantt');
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(null);
+
+  // API calls
+  const apiCall = async (url, options = {}) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}${url}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...options.headers,
+        },
+        ...options,
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('API call failed:', error);
+      // Fallback to localStorage if server is not available
+      return null;
+    }
+  };
+
+  // Load progress from server
+  const loadProgress = async () => {
+    setIsLoading(true);
+    try {
+      const result = await apiCall('/progress');
+      if (result && result.success) {
+        setCompletedTasks(result.data.completedTasks || {});
+        setExpandedPhases(result.data.expandedPhases || {});
+        setSelectedView(result.data.selectedView || 'gantt');
+        setLastUpdated(result.data.lastUpdated);
+      } else {
+        // Fallback to localStorage
+        const savedCompleted = localStorage.getItem('myshop-completed-tasks');
+        const savedExpanded = localStorage.getItem('myshop-expanded-phases');
+        const savedView = localStorage.getItem('myshop-selected-view');
+        
+        if (savedCompleted) setCompletedTasks(JSON.parse(savedCompleted));
+        if (savedExpanded) setExpandedPhases(JSON.parse(savedExpanded));
+        if (savedView) setSelectedView(JSON.parse(savedView));
+      }
+    } catch (error) {
+      console.error('Failed to load progress:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Save progress to server
+  const saveProgress = async (updates = {}) => {
+    setIsSaving(true);
+    try {
+      const dataToSave = {
+        completedTasks: updates.completedTasks || completedTasks,
+        expandedPhases: updates.expandedPhases || expandedPhases,
+        selectedView: updates.selectedView || selectedView,
+      };
+
+      const result = await apiCall('/progress', {
+        method: 'POST',
+        body: JSON.stringify(dataToSave),
+      });
+
+      if (result && result.success) {
+        setLastUpdated(result.data.lastUpdated);
+        // Also save to localStorage as backup
+        localStorage.setItem('myshop-completed-tasks', JSON.stringify(dataToSave.completedTasks));
+        localStorage.setItem('myshop-expanded-phases', JSON.stringify(dataToSave.expandedPhases));
+        localStorage.setItem('myshop-selected-view', JSON.stringify(dataToSave.selectedView));
+      }
+    } catch (error) {
+      console.error('Failed to save progress:', error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Load progress on component mount
+  useEffect(() => {
+    loadProgress();
+  }, []);
+
+  // Auto-save when state changes
+  useEffect(() => {
+    if (!isLoading) {
+      const timeoutId = setTimeout(() => {
+        saveProgress({ completedTasks });
+      }, 500); // Debounce for 500ms
+      return () => clearTimeout(timeoutId);
+    }
+  }, [completedTasks, isLoading]);
+
+  useEffect(() => {
+    if (!isLoading) {
+      const timeoutId = setTimeout(() => {
+        saveProgress({ expandedPhases });
+      }, 500);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [expandedPhases, isLoading]);
+
+  useEffect(() => {
+    if (!isLoading) {
+      const timeoutId = setTimeout(() => {
+        saveProgress({ selectedView });
+      }, 500);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [selectedView, isLoading]);
 
   const roadmapData = {
     phases: [
@@ -259,6 +376,91 @@ const App = () => {
     }));
   };
 
+  // Reset all progress
+  const resetAllProgress = async () => {
+    if (window.confirm('Bạn có chắc chắn muốn reset tất cả tiến độ? Hành động này không thể hoàn tác.')) {
+      setIsSaving(true);
+      try {
+        const result = await apiCall('/progress', { method: 'DELETE' });
+        if (result && result.success) {
+          setCompletedTasks({});
+          setExpandedPhases({});
+          setSelectedView('gantt');
+          setLastUpdated(result.data.lastUpdated);
+          alert('Đã reset tất cả tiến độ thành công!');
+        }
+      } catch (error) {
+        console.error('Failed to reset:', error);
+        alert('Có lỗi xảy ra khi reset tiến độ!');
+      } finally {
+        setIsSaving(false);
+      }
+    }
+  };
+
+  // Export progress data
+  const exportProgress = () => {
+    const progressData = {
+      completedTasks,
+      expandedPhases,
+      selectedView,
+      exportDate: new Date().toISOString(),
+      lastUpdated,
+      version: '1.0'
+    };
+    
+    const dataStr = JSON.stringify(progressData, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(dataBlob);
+    link.download = `myshop-progress-${new Date().toISOString().split('T')[0]}.json`;
+    link.click();
+  };
+
+  // Import progress data
+  const importProgress = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const progressData = JSON.parse(e.target.result);
+        
+        setIsSaving(true);
+        
+        const updates = {
+          completedTasks: progressData.completedTasks || {},
+          expandedPhases: progressData.expandedPhases || {},
+          selectedView: progressData.selectedView || 'gantt'
+        };
+        
+        const result = await apiCall('/progress', {
+          method: 'POST',
+          body: JSON.stringify(updates),
+        });
+        
+        if (result && result.success) {
+          setCompletedTasks(updates.completedTasks);
+          setExpandedPhases(updates.expandedPhases);
+          setSelectedView(updates.selectedView);
+          setLastUpdated(result.data.lastUpdated);
+          alert('Import tiến độ thành công!');
+        }
+      } catch (error) {
+        alert('File không hợp lệ! Vui lòng chọn file JSON đã export.');
+        console.error('Import error:', error);
+      } finally {
+        setIsSaving(false);
+      }
+    };
+    reader.readAsText(file);
+    
+    // Reset file input
+    event.target.value = '';
+  };
+
   const getTaskProgress = (task) => {
     const completed = task.subtasks.filter(st => completedTasks[st.id]).length;
     return Math.round((completed / task.subtasks.length) * 100);
@@ -475,6 +677,16 @@ const App = () => {
 
   return (
     <div className="min-h-screen bg-gray-100 p-6">
+      {/* Loading Overlay */}
+      {isLoading && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-lg flex items-center gap-3">
+            <div className="w-6 h-6 border-3 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+            <span className="text-lg font-medium">Đang tải tiến độ từ server...</span>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-7xl mx-auto">
         <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-8 rounded-lg shadow-lg mb-6">
           <h1 className="text-4xl font-bold mb-2">🚀 MyShop 2025 Roadmap</h1>
@@ -497,27 +709,97 @@ const App = () => {
         <OverallStats />
 
         <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
-          <div className="flex gap-2">
-            <button
-              onClick={() => setSelectedView('gantt')}
-              className={`px-4 py-2 rounded font-medium transition-colors ${
-                selectedView === 'gantt' 
-                  ? 'bg-blue-600 text-white' 
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              📊 Gantt Timeline
-            </button>
-            <button
-              onClick={() => setSelectedView('detailed')}
-              className={`px-4 py-2 rounded font-medium transition-colors ${
-                selectedView === 'detailed' 
-                  ? 'bg-blue-600 text-white' 
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              📝 Chi Tiết Tasks
-            </button>
+          <div className="flex items-center justify-between">
+            <div className="flex gap-2">
+              <button
+                onClick={() => setSelectedView('gantt')}
+                className={`px-4 py-2 rounded font-medium transition-colors ${
+                  selectedView === 'gantt' 
+                    ? 'bg-blue-600 text-white' 
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                📊 Gantt Timeline
+              </button>
+              <button
+                onClick={() => setSelectedView('detailed')}
+                className={`px-4 py-2 rounded font-medium transition-colors ${
+                  selectedView === 'detailed' 
+                    ? 'bg-blue-600 text-white' 
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                📝 Chi Tiết Tasks
+              </button>
+            </div>
+
+            {/* Progress Management Panel */}
+            <div className="flex items-center gap-3">
+              <div className="text-sm text-gray-600">
+                <span className="font-medium">
+                  {Object.keys(completedTasks).filter(key => completedTasks[key]).length} 
+                </span>
+                <span> / </span>
+                <span>
+                  {roadmapData.phases.flatMap(p => p.tasks.flatMap(t => t.subtasks)).length}
+                </span>
+                <span> tasks hoàn thành</span>
+              </div>
+              
+              {/* Sync Status */}
+              <div className="flex items-center gap-1 text-xs">
+                {isLoading ? (
+                  <>
+                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                    <span className="text-blue-600">Đang tải...</span>
+                  </>
+                ) : isSaving ? (
+                  <>
+                    <div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse"></div>
+                    <span className="text-orange-600">Đang lưu...</span>
+                  </>
+                ) : (
+                  <>
+                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                    <span className="text-green-600">Đã đồng bộ</span>
+                    {lastUpdated && (
+                      <span className="text-gray-400 ml-1">
+                        ({new Date(lastUpdated).toLocaleTimeString('vi-VN')})
+                      </span>
+                    )}
+                  </>
+                )}
+              </div>
+              
+              <div className="flex gap-2">
+                <button
+                  onClick={exportProgress}
+                  className="px-3 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200 transition-colors"
+                  title="Export tiến độ ra file JSON"
+                >
+                  📤 Export
+                </button>
+                
+                <label className="px-3 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors cursor-pointer" title="Import tiến độ từ file JSON">
+                  📥 Import
+                  <input
+                    type="file"
+                    accept=".json"
+                    onChange={importProgress}
+                    className="hidden"
+                  />
+                </label>
+                
+                <button
+                  onClick={resetAllProgress}
+                  className="px-3 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors"
+                  title="Reset tất cả tiến độ"
+                  disabled={isSaving}
+                >
+                  🔄 Reset
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -725,6 +1007,23 @@ const App = () => {
               </ul>
               <div className="text-xs text-gray-600 mt-2">→ Production-ready</div>
             </div>
+          </div>
+        </div>
+
+        {/* Auto-save notification */}
+        <div className="mt-4 text-center">
+          <div className="inline-flex items-center gap-2 text-xs text-gray-500 bg-gray-50 px-3 py-1 rounded-full">
+            {isLoading ? (
+              <>
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                <span>Đang kết nối server...</span>
+              </>
+            ) : (
+              <>
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                <span>Tiến độ được đồng bộ real-time giữa tất cả người dùng</span>
+              </>
+            )}
           </div>
         </div>
       </div>

@@ -1,0 +1,17 @@
+{
+  "completedTasks": {
+    "p1w1t1": true,
+    "p1w1t2": true,
+    "p1w1t3": true,
+    "p1w1t4": true,
+    "p1w2t1": true,
+    "p1w2t2": true,
+    "p1w2t3": true
+  },
+  "expandedPhases": {
+    "phase1": true
+  },
+  "selectedView": "detailed",
+  "lastUpdated": "2025-09-30T14:50:27.714Z",
+  "updateCount": 21
+}
